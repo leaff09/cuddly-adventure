@@ -10,45 +10,67 @@
 
   return {
     start() {
-      const { lookupModule, filters } = valenced.modules.finders;
+      const { getModules, filters } = valenced.modules.finders;
       const { after, instead } = valenced.patcher;
 
-      // 1. Trouver UserStore via ses méthodes propres
-      const userStoreMod = lookupModule(filters.withProps("getUser", "getCurrentUser"));
-      const UserStore = userStoreMod?.[0];
+      // 1. Intercept UserStore (handles both own properties and prototype methods)
+      unpatches.push(
+        getModules(filters.withProps("getUser", "getCurrentUser"), (mod) => {
+          const store = mod?.default ?? mod;
+          if (!store) return;
 
-      if (UserStore) {
-        unpatches.push(after("getUser", UserStore, (_, res) => stripDecoration(res)));
-        unpatches.push(after("getCurrentUser", UserStore, (_, res) => stripDecoration(res)));
-        if (UserStore.getUsers) {
-          unpatches.push(after("getUsers", UserStore, (_, res) => {
-            if (res) Object.values(res).forEach(stripDecoration);
-            return res;
-          }));
-        }
-      }
+          const target = typeof store.getUser === "function" ? store : Object.getPrototypeOf(store);
+          if (target?.getUser) {
+            unpatches.push(after("getUser", target, (_, res) => stripDecoration(res)));
+          }
+          if (target?.getCurrentUser) {
+            unpatches.push(after("getCurrentUser", target, (_, res) => stripDecoration(res)));
+          }
+          if (target?.getUsers) {
+            unpatches.push(after("getUsers", target, (_, res) => {
+              if (res && typeof res === "object") {
+                Object.values(res).forEach(stripDecoration);
+              }
+              return res;
+            }));
+          }
+        })
+      );
 
-      // 2. Trouver GuildMemberStore (décorations par serveur)
-      const memberStoreMod = lookupModule(filters.withProps("getMember", "getTrueMember"));
-      const GuildMemberStore = memberStoreMod?.[0];
+      // 2. Intercept GuildMemberStore (server-specific decorations)
+      unpatches.push(
+        getModules(filters.withProps("getMember", "getTrueMember"), (mod) => {
+          const store = mod?.default ?? mod;
+          if (!store) return;
 
-      if (GuildMemberStore) {
-        unpatches.push(after("getMember", GuildMemberStore, (_, res) => stripDecoration(res)));
-        unpatches.push(after("getTrueMember", GuildMemberStore, (_, res) => stripDecoration(res)));
-      }
+          const target = typeof store.getMember === "function" ? store : Object.getPrototypeOf(store);
+          if (target?.getMember) {
+            unpatches.push(after("getMember", target, (_, res) => stripDecoration(res)));
+          }
+          if (target?.getTrueMember) {
+            unpatches.push(after("getTrueMember", target, (_, res) => stripDecoration(res)));
+          }
+        })
+      );
 
-      // 3. Bloquer la génération des URLs de décoration d'avatar
-      const decoUtilsMod = lookupModule(filters.withProps("getAvatarDecorationURL"));
-      const AvatarDecoUtils = decoUtilsMod?.[0];
-
-      if (AvatarDecoUtils) {
-        unpatches.push(instead("getAvatarDecorationURL", AvatarDecoUtils, () => null));
-      }
+      // 3. Block Avatar Decoration URL builders & hooks
+      unpatches.push(
+        getModules(filters.withProps("getAvatarDecorationURL"), (mod) => {
+          const utils = mod?.default ?? mod;
+          if (utils?.getAvatarDecorationURL) {
+            unpatches.push(instead("getAvatarDecorationURL", utils, () => null));
+          }
+        })
+      );
     },
     stop() {
       while (unpatches.length) {
         const unpatch = unpatches.pop();
-        if (typeof unpatch === "function") unpatch();
+        if (typeof unpatch === "function") {
+          try {
+            unpatch();
+          } catch {}
+        }
       }
     }
   };
