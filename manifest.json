@@ -1,14 +1,19 @@
 {
-  "name": "NoAvatarDecorations",
+  "format": 1,
+  "id": "leaff09.no-avatar-decorations",
+  "name": "No Avatar Decorations",
   "description": "Masque toutes les décorations d'avatar sur les profils et dans le chat.",
-  "authors": [
-    {
-      "name": "Custom",
-      "id": "000000000000000000"
+  "author": "leaff09",
+  "version": "1.0.0",
+  "dependencies": {
+    "valenced.api": {
+      "version": ">=1 <2"
+    },
+    "discord": {
+      "version": "*"
     }
-  ],
-  "main": "index.js",
-  "vendetta": {
-    "icon": "ic_close_24px"
+  },
+  "dist": {
+    "script": "index.js"
   }
 }
