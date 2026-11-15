@@ -1,59 +1,63 @@
 (() => {
   const unpatches = [];
 
-  function stripDecoration(obj) {
-    if (!obj || typeof obj !== "object") return obj;
-    if (obj.avatarDecoration !== undefined) obj.avatarDecoration = null;
-    if (obj.avatarDecorationData !== undefined) obj.avatarDecorationData = null;
-    return obj;
+  function isDecorationUrl(source) {
+    if (!source) return false;
+    const uri = typeof source === "string" ? source : source.uri;
+    return typeof uri === "string" && uri.includes("avatar-decoration-presets");
   }
 
   return {
     start() {
       const { getModules, filters } = valenced.modules.finders;
-      const { after, instead } = valenced.patcher;
+      const { before, instead } = valenced.patcher;
 
-      // 1. Intercept UserStore (handles both own properties and prototype methods)
+      // 1. Intercepter React Native Image (render / resolveAssetSource)
       unpatches.push(
-        getModules(filters.withProps("getUser", "getCurrentUser"), (mod) => {
-          const store = mod?.default ?? mod;
-          if (!store) return;
+        getModules(filters.withProps("resolveAssetSource"), (mod) => {
+          const RNImage = mod?.default ?? mod;
+          if (!RNImage) return;
 
-          const target = typeof store.getUser === "function" ? store : Object.getPrototypeOf(store);
-          if (target?.getUser) {
-            unpatches.push(after("getUser", target, (_, res) => stripDecoration(res)));
+          if (RNImage.render) {
+            unpatches.push(
+              before("render", RNImage, (args) => {
+                if (args[0] && isDecorationUrl(args[0].source)) {
+                  args[0] = { ...args[0], source: null };
+                }
+              })
+            );
           }
-          if (target?.getCurrentUser) {
-            unpatches.push(after("getCurrentUser", target, (_, res) => stripDecoration(res)));
-          }
-          if (target?.getUsers) {
-            unpatches.push(after("getUsers", target, (_, res) => {
-              if (res && typeof res === "object") {
-                Object.values(res).forEach(stripDecoration);
-              }
-              return res;
-            }));
+
+          if (RNImage.resolveAssetSource) {
+            unpatches.push(
+              instead("resolveAssetSource", RNImage, (args, orig) => {
+                if (isDecorationUrl(args[0])) return null;
+                return orig(...args);
+              })
+            );
           }
         })
       );
 
-      // 2. Intercept GuildMemberStore (server-specific decorations)
+      // 2. Intercepter FastImage (souvent utilisé par Discord Mobile pour les avatars/décorations)
       unpatches.push(
-        getModules(filters.withProps("getMember", "getTrueMember"), (mod) => {
-          const store = mod?.default ?? mod;
-          if (!store) return;
+        getModules(filters.withProps("preload", "clearMemoryCache"), (mod) => {
+          const FastImage = mod?.default ?? mod;
+          if (!FastImage) return;
 
-          const target = typeof store.getMember === "function" ? store : Object.getPrototypeOf(store);
-          if (target?.getMember) {
-            unpatches.push(after("getMember", target, (_, res) => stripDecoration(res)));
-          }
-          if (target?.getTrueMember) {
-            unpatches.push(after("getTrueMember", target, (_, res) => stripDecoration(res)));
+          if (FastImage.render) {
+            unpatches.push(
+              before("render", FastImage, (args) => {
+                if (args[0] && isDecorationUrl(args[0].source)) {
+                  args[0] = { ...args[0], source: null };
+                }
+              })
+            );
           }
         })
       );
 
-      // 3. Block Avatar Decoration URL builders & hooks
+      // 3. Intercepter les constructeurs d'URL d'assets Discord
       unpatches.push(
         getModules(filters.withProps("getAvatarDecorationURL"), (mod) => {
           const utils = mod?.default ?? mod;
