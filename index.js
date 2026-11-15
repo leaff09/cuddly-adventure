@@ -16,62 +16,88 @@
 
   return {
     start() {
-      const api = globalThis.valenced || valenced;
-      const { getModules, filters } = api.modules.finders;
-      const { before, after } = api.patcher;
-      let hookedCount = 0;
+      try {
+        const root = typeof valenced !== "undefined" ? valenced : globalThis.valenced;
+        console.log("[NoDeco] Clés racine valenced :", root ? Object.keys(root) : "undefined");
+        if (root?.api) {
+          console.log("[NoDeco] Clés valenced.api :", Object.keys(root.api));
+        }
 
-      // 1. Bloquer les URLs d'images React Native contenant "avatar-decoration"
-      unpatches.push(
-        getModules(filters.withProps("resolveAssetSource"), (mod) => {
-          const RNImage = mod?.default ?? mod;
-          if (RNImage?.render) {
-            hookedCount++;
-            unpatches.push(
-              before("render", RNImage, (args) => {
-                if (args && isDecorationUrl(args.source)) {
-                  args = { ...args, source: null };
-                }
-              })
-            );
-          }
-        })
-      );
+        // Détecter automatiquement où se trouvent modules et patcher (root ou root.api)
+        const api = root?.modules ? root : root?.api;
+        if (!api || !api.modules || !api.patcher) {
+          console.log("[NoDeco] API modules/patcher introuvable, structure :", JSON.stringify(Object.keys(root || {})));
+          return;
+        }
 
-      // 2. Bloquer FastImage (décorations animées APNG/WebP)
-      unpatches.push(
-        getModules(filters.withProps("preload", "clearMemoryCache"), (mod) => {
-          const FastImage = mod?.default ?? mod;
-          if (FastImage?.render) {
-            hookedCount++;
-            unpatches.push(
-              before("render", FastImage, (args) => {
-                if (args && isDecorationUrl(args.source)) {
-                  args = { ...args, source: null };
-                }
-              })
-            );
-          }
-        })
-      );
+        const finders = api.modules.finders || api.modules;
+        console.log("[NoDeco] Clés finders :", Object.keys(finders));
 
-      // 3. Nettoyer UserStore à la volée
-      unpatches.push(
-        getModules(filters.withProps("getUser", "getCurrentUser"), (mod) => {
-          const store = mod?.default ?? mod;
-          if (!store) return;
-          const target = typeof store.getUser === "function" ? store : Object.getPrototypeOf(store);
-          if (target?.getUser) {
-            hookedCount++;
-            unpatches.push(after("getUser", target, (_, res) => stripUser(res)));
-          }
-          if (target?.getCurrentUser) {
-            unpatches.push(after("getCurrentUser", target, (_, res) => stripUser(res)));
-          }
-        })
-      );
+        const getModules = finders.getModules;
+        const filters = finders.filters;
+        const { before, after } = api.patcher;
 
-      console.log(`[NoDecorations] Démarré avec succès (${hookedCount} hooks actifs)`);
+        if (!getModules || !filters) {
+          console.log("[NoDeco] getModules ou filters manquant");
+          return;
+        }
+
+        let count = 0;
+
+        // 1. Bloquer les URLs d'images React Native contenant "avatar-decoration"
+        unpatches.push(
+          getModules(filters.withProps("resolveAssetSource"), (mod) => {
+            const RNImage = mod?.default ?? mod;
+            if (RNImage?.render) {
+              count++;
+              unpatches.push(
+                before("render", RNImage, (args) => {
+                  if (args && isDecorationUrl(args.source)) {
+                    args = { ...args, source: null };
+                  }
+                })
+              );
+            }
+          })
+        );
+
+        // 2. Bloquer FastImage
+        unpatches.push(
+          getModules(filters.withProps("preload", "clearMemoryCache"), (mod) => {
+            const FastImage = mod?.default ?? mod;
+            if (FastImage?.render) {
+              count++;
+              unpatches.push(
+                before("render", FastImage, (args) => {
+                  if (args && isDecorationUrl(args.source)) {
+                    args = { ...args, source: null };
+                  }
+                })
+              );
+            }
+          })
+        );
+
+        // 3. Nettoyer UserStore
+        unpatches.push(
+          getModules(filters.withProps("getUser", "getCurrentUser"), (mod) => {
+            const store = mod?.default ?? mod;
+            if (!store) return;
+            const target = typeof store.getUser === "function" ? store : Object.getPrototypeOf(store);
+            if (target?.getUser) {
+              count++;
+              unpatches.push(after("getUser", target, (_, res) => stripUser(res)));
+            }
+            if (target?.getCurrentUser) {
+              unpatches.push(after("getCurrentUser", target, (_, res) => stripUser(res)));
+            }
+          })
+        );
+
+        console.log("[NoDeco] Hooks installés :", count);
+      } catch (err) {
+        console.error("[NoDeco] Erreur capturée :", err?.message || err, err?.stack);
+      }
     },
     stop() {
       while (unpatches.length) {
@@ -83,4 +109,3 @@
     }
   };
 })()
-                                 
