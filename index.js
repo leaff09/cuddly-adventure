@@ -1,33 +1,57 @@
 (() => {
-  let unpatchGetUser;
-  let unpatchGetCurrentUser;
+  const unpatches = [];
 
-  function stripDecoration(user) {
-    if (!user) return user;
-    if (user.avatarDecoration !== undefined) {
-      user.avatarDecoration = null;
-    }
-    if (user.avatarDecorationData !== undefined) {
-      user.avatarDecorationData = null;
-    }
-    return user;
+  function stripDecoration(obj) {
+    if (!obj || typeof obj !== "object") return obj;
+    if ("avatarDecoration" in obj) obj.avatarDecoration = null;
+    if ("avatarDecorationData" in obj) obj.avatarDecorationData = null;
+    return obj;
   }
 
   return {
     start() {
-      const UserStore = valenced.modules.finders.findByStoreName("UserStore");
-      if (!UserStore) return;
+      const { findByStoreName, findByProps } = valenced.modules.finders;
+      const { after, instead } = valenced.patcher;
 
-      if (UserStore.getUser) {
-        unpatchGetUser = valenced.patcher.after("getUser", UserStore, (_, res) => stripDecoration(res));
+      // 1. Nettoyer UserStore (profils globaux)
+      const UserStore = findByStoreName("UserStore");
+      if (UserStore) {
+        if (UserStore.getUser) {
+          unpatches.push(after("getUser", UserStore, (_, res) => stripDecoration(res)));
+        }
+        if (UserStore.getCurrentUser) {
+          unpatches.push(after("getCurrentUser", UserStore, (_, res) => stripDecoration(res)));
+        }
+        if (UserStore.getUsers) {
+          unpatches.push(after("getUsers", UserStore, (_, res) => {
+            if (res) Object.values(res).forEach(stripDecoration);
+            return res;
+          }));
+        }
       }
-      if (UserStore.getCurrentUser) {
-        unpatchGetCurrentUser = valenced.patcher.after("getCurrentUser", UserStore, (_, res) => stripDecoration(res));
+
+      // 2. Nettoyer GuildMemberStore (décorations spécifiques par serveur)
+      const GuildMemberStore = findByStoreName("GuildMemberStore");
+      if (GuildMemberStore) {
+        if (GuildMemberStore.getMember) {
+          unpatches.push(after("getMember", GuildMemberStore, (_, res) => stripDecoration(res)));
+        }
+        if (GuildMemberStore.getTrueMember) {
+          unpatches.push(after("getTrueMember", GuildMemberStore, (_, res) => stripDecoration(res)));
+        }
+      }
+
+      // 3. Bloquer le resolver d'URL des décorations d'avatar
+      const AvatarDecoUtils = findByProps("getAvatarDecorationURL");
+      if (AvatarDecoUtils && AvatarDecoUtils.getAvatarDecorationURL) {
+        unpatches.push(instead("getAvatarDecorationURL", AvatarDecoUtils, () => null));
       }
     },
     stop() {
-      if (unpatchGetUser) unpatchGetUser();
-      if (unpatchGetCurrentUser) unpatchGetCurrentUser();
+      while (unpatches.length) {
+        const unpatch = unpatches.pop();
+        if (typeof unpatch === "function") unpatch();
+      }
     }
   };
 })()
