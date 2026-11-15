@@ -10,69 +10,65 @@
 
   return {
     start() {
-      const { getModules, filters } = valenced.modules.finders;
+      const { lookupModule, filters } = valenced.modules.finders;
       const { after, instead } = valenced.patcher;
 
-      // 1. Bloquer getAvatarDecorationURL et makeSource (si URL de décoration)
-      unpatches.push(
-        getModules(filters.withProps("getAvatarDecorationURL"), (mod) => {
-          if (!mod) return;
+      // 1. Bloquer getAvatarDecorationURL et makeSource
+      const decoRes = lookupModule(filters.withProps("getAvatarDecorationURL"));
+      const decoMod = decoRes ? decoRes["0"] : null;
 
-          if (typeof mod.getAvatarDecorationURL === "function") {
-            unpatches.push(instead(mod, "getAvatarDecorationURL", () => null));
-          }
-
-          if (typeof mod.makeSource === "function") {
-            unpatches.push(
-              instead(mod, "makeSource", (args, orig) => {
-                const url = args?.[0];
-                if (typeof url === "string" && url.includes("avatar-decoration")) {
-                  return null;
-                }
-                return orig(...args);
-              })
-            );
-          }
-        })
-      );
+      if (decoMod) {
+        if (typeof decoMod.getAvatarDecorationURL === "function") {
+          unpatches.push(instead(decoMod, "getAvatarDecorationURL", () => null));
+        }
+        if (typeof decoMod.makeSource === "function") {
+          unpatches.push(
+            instead(decoMod, "makeSource", (args, orig) => {
+              const url = args ? args["0"] : null;
+              if (typeof url === "string" && url.includes("avatar-decoration")) {
+                return null;
+              }
+              return orig.apply(this, args);
+            })
+          );
+        }
+      }
 
       // 2. Nettoyer UserStore (profils globaux)
-      unpatches.push(
-        getModules(filters.withProps("getUser", "getCurrentUser"), (store) => {
-          if (!store) return;
+      const userStoreRes = lookupModule(filters.withProps("getUser", "getCurrentUser"));
+      const UserStore = userStoreRes ? userStoreRes["0"] : null;
 
-          if (typeof store.getUser === "function") {
-            unpatches.push(after(store, "getUser", (_, res) => stripDecoration(res)));
-          }
-          if (typeof store.getCurrentUser === "function") {
-            unpatches.push(after(store, "getCurrentUser", (_, res) => stripDecoration(res)));
-          }
-          if (typeof store.getUsers === "function") {
-            unpatches.push(
-              after(store, "getUsers", (_, res) => {
-                if (res && typeof res === "object") {
-                  Object.values(res).forEach(stripDecoration);
-                }
-                return res;
-              })
-            );
-          }
-        })
-      );
+      if (UserStore) {
+        if (typeof UserStore.getUser === "function") {
+          unpatches.push(after(UserStore, "getUser", (_, res) => stripDecoration(res)));
+        }
+        if (typeof UserStore.getCurrentUser === "function") {
+          unpatches.push(after(UserStore, "getCurrentUser", (_, res) => stripDecoration(res)));
+        }
+        if (typeof UserStore.getUsers === "function") {
+          unpatches.push(
+            after(UserStore, "getUsers", (_, res) => {
+              if (res && typeof res === "object") {
+                Object.values(res).forEach(stripDecoration);
+              }
+              return res;
+            })
+          );
+        }
+      }
 
-      // 3. Nettoyer GuildMemberStore (décorations spécifiques par serveur)
-      unpatches.push(
-        getModules(filters.withProps("getMember", "getTrueMember"), (store) => {
-          if (!store) return;
+      // 3. Nettoyer GuildMemberStore (décorations par serveur)
+      const memberStoreRes = lookupModule(filters.withProps("getMember", "getTrueMember"));
+      const GuildMemberStore = memberStoreRes ? memberStoreRes["0"] : null;
 
-          if (typeof store.getMember === "function") {
-            unpatches.push(after(store, "getMember", (_, res) => stripDecoration(res)));
-          }
-          if (typeof store.getTrueMember === "function") {
-            unpatches.push(after(store, "getTrueMember", (_, res) => stripDecoration(res)));
-          }
-        })
-      );
+      if (GuildMemberStore) {
+        if (typeof GuildMemberStore.getMember === "function") {
+          unpatches.push(after(GuildMemberStore, "getMember", (_, res) => stripDecoration(res)));
+        }
+        if (typeof GuildMemberStore.getTrueMember === "function") {
+          unpatches.push(after(GuildMemberStore, "getTrueMember", (_, res) => stripDecoration(res)));
+        }
+      }
     },
     stop() {
       while (unpatches.length) {
