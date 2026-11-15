@@ -11,33 +11,34 @@
   return {
     default: {
       start() {
-        const { lookupModule, filters } = valenced.modules.finders;
+        const { getModules, filters } = valenced.modules.finders;
         const { after, instead } = valenced.patcher;
 
-        // 1. Masquer toutes les décorations d'avatar
-        const decoRes = lookupModule(filters.withProps("getAvatarDecorationURL"));
-        const decoMod = decoRes ? decoRes["0"] : null;
+        // 1. Masquer les décorations d'avatar dès que le module est chargé
+        unpatches.push(
+          getModules(filters.withProps("getAvatarDecorationURL"), (decoMod) => {
+            if (decoMod && typeof decoMod.getAvatarDecorationURL === "function") {
+              unpatches.push(instead(decoMod, "getAvatarDecorationURL", () => null));
+            }
+          })
+        );
 
-        if (decoMod && typeof decoMod.getAvatarDecorationURL === "function") {
-          unpatches.push(instead(decoMod, "getAvatarDecorationURL", () => null));
-        }
-
-        // 2. Masquer tous les effets de profil (animations plein écran / guirlandes)
-        const profileStoreRes = lookupModule(filters.withProps("getUserProfile"));
-        const UserProfileStore = profileStoreRes ? profileStoreRes["0"] : null;
-
-        if (UserProfileStore) {
-          if (typeof UserProfileStore.getUserProfile === "function") {
-            unpatches.push(
-              after(UserProfileStore, "getUserProfile", (_, res) => stripProfileEffect(res))
-            );
-          }
-          if (typeof UserProfileStore.getGuildMemberProfile === "function") {
-            unpatches.push(
-              after(UserProfileStore, "getGuildMemberProfile", (_, res) => stripProfileEffect(res))
-            );
-          }
-        }
+        // 2. Masquer les effets de profil dès que UserProfileStore est chargé
+        unpatches.push(
+          getModules(filters.withProps("getUserProfile"), (UserProfileStore) => {
+            if (!UserProfileStore) return;
+            if (typeof UserProfileStore.getUserProfile === "function") {
+              unpatches.push(
+                after(UserProfileStore, "getUserProfile", (_, res) => stripProfileEffect(res))
+              );
+            }
+            if (typeof UserProfileStore.getGuildMemberProfile === "function") {
+              unpatches.push(
+                after(UserProfileStore, "getGuildMemberProfile", (_, res) => stripProfileEffect(res))
+              );
+            }
+          })
+        );
       },
       stop() {
         while (unpatches.length) {
