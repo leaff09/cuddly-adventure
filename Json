@@ -1,0 +1,14 @@
+{
+  "name": "NoAvatarDecorations",
+  "description": "Masque toutes les décorations d'avatar sur les profils et dans le chat.",
+  "authors": [
+    {
+      "name": "Custom",
+      "id": "000000000000000000"
+    }
+  ],
+  "main": "index.js",
+  "vendetta": {
+    "icon": "ic_close_24px"
+  }
+}
